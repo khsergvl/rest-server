@@ -22,25 +22,21 @@ import java.util.concurrent.Future;
 @Slf4j
 public class ExecutionServiceImpl implements ExecutionService {
 
-    private final Map<Long, String> executions;
-
     private final HeavyLoadedService heavyLoadedService;
     private final ExecutionRepository repository;
-    private final Queue<ExecutionFuture> executionQueue;
 
     public ExecutionServiceImpl(HeavyLoadedService heavyLoadedService, ExecutionRepository repository) {
-        this.executions = new HashMap<>();
         this.heavyLoadedService = heavyLoadedService;
         this.repository = repository;
-        this.executionQueue = new ConcurrentLinkedQueue<ExecutionFuture>();
     }
 
     @Override
-    public synchronized Map<Long, String> execute(Long[] values) {
-        executions.clear();
+    public Map<Long, String> execute(Long[] values) {
+        Map<Long, String> executions = new HashMap<>();
+        Queue<ExecutionFuture> executionQueue = new ConcurrentLinkedQueue<ExecutionFuture>();
 
         for (Long value : values) {
-            log.info("Evaluate payload for value: " + value);
+            log.info("Evaluate payload for value: " + value + " in the thread " + Thread.currentThread().getName());
             executionQueue.add(new ExecutionFuture(
                     value, heavyLoadedService.heavyLoadedCall(value), heavyLoadedService.extraHeavyLoadedCall(value)));
         }
@@ -69,7 +65,7 @@ public class ExecutionServiceImpl implements ExecutionService {
     }
 
     @Override
-    public synchronized Iterable<Execution> fetchExecutions(Long[] values) {
+    public Iterable<Execution> fetchExecutions(Long[] values) {
         try {
             if (values != null && values.length > 0) {
                 return repository.findAllById(Arrays.asList(values));
@@ -86,11 +82,7 @@ public class ExecutionServiceImpl implements ExecutionService {
     private void persistExecutions(Map<Long, String> executions) {
         for (Entry<Long, String> execution : executions.entrySet()) {
             try {
-                long id = execution.getKey();
-
-                if (!repository.findById(id).isPresent()) {
-                    repository.save(new Execution(id, execution.getValue(), System.currentTimeMillis()));
-                }
+                repository.insertIfnotExist(execution.getKey(), execution.getValue(), System.currentTimeMillis());
             } catch (Exception e) {
                 log.warn("Exception during persistence operations: ", e);
             }
